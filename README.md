@@ -157,5 +157,3 @@ Contributions are welcome! Please open issues or submit pull requests.
 Have questions or found a bug? Open an issue on [GitHub](https://github.com/chamiruuu/CopyCat/issues).
 
 ---
-
-Made with ❤️ by the CopyCat team.
