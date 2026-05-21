@@ -1,13 +1,14 @@
 {
   "name": "copycat",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.1.1",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "tauri": "tauri"
+    "tauri": "tauri",
+    "gen:icons": "node scripts/generate-icons.js"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",
@@ -28,6 +29,9 @@
     "autoprefixer": "^10.5.0",
     "postcss": "^8.5.15",
     "tailwindcss": "^3.4.19",
-    "vite": "^7.0.4"
+    "vite": "^7.0.4",
+    "icon-gen": "^3.0.2",
+    "sharp": "^0.32.5",
+    "png-to-ico": "^1.1.0"
   }
 }
