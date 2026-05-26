@@ -33,7 +33,7 @@
   "plugins": {
     "updater": {
       "active": true,
-      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDczMTJGM0VBQzFFOTFDNzEKUldSeEhPbkI2dk1TY3l3L25BclBXeEJCUUNLa3huRUEzQXdQT2F3TGxRUHdmbUFEdG1BVWpqdloK",
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEYyRDU0OTQyRkY2RkRCQzcKUldUSDIyLy9Ra25WOHQ1SmtRN3M2VjZKd003b3JJUUlKLzhORE9aaGlOd0pEQXE3ekpsMVFCdXoK",
       "endpoints": [
         "https://github.com/chamiruuu/CopyCat/releases/latest/download/latest.json"
       ]
