@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import {
   writeTextFile,
   readTextFile,
@@ -11,7 +11,7 @@ import { Menu } from "@tauri-apps/api/menu";
 import { TrayIcon } from "@tauri-apps/api/tray";
 import { defaultWindowIcon } from "@tauri-apps/api/app";
 import { listen } from "@tauri-apps/api/event";
-import { check } from "@tauri-apps/plugin-updater"; // Verified modern updater import
+import { check } from "@tauri-apps/plugin-updater";
 import {
   Settings,
   Plus,
@@ -43,11 +43,19 @@ import logo from "./assets/CopyCat.png";
 const FILE_SNIPPETS = "copycat_data.json";
 const FILE_CATEGORIES = "copycat_cats.json";
 const FILE_NOTES = "copycat_notes.json";
+const FILE_SETTINGS = "settings.json";
+const LEGACY_FILE_SETTINGS = "copycat_settings.json";
+
+const defaultSettings = {
+  shortcutEnabled: true,
+  vanishAfterCopy: true,
+  customShortcut: "CommandOrControl+Shift+S",
+};
 
 const defaultCategories = [
   { id: "1", name: "General", color: "#2dd4bf" },
-  { id: "2", name: "Code", color: "#3b82f6" },
-  { id: "3", name: "Emails", color: "#f59e0b" },
+  { id: "2", name: "Standard Responses", color: "#3b82f6" },
+  { id: "3", name: "Quick Replies", color: "#f59e0b" },
 ];
 
 const defaultSnippets = [
@@ -55,13 +63,13 @@ const defaultSnippets = [
     id: "s1",
     title: "Quick Reply",
     categoryId: "3",
-    text: "Thanks for reaching out. I will get back to you shortly.",
+    text: "Hi Sir this is XXX, Please hold on.",
   },
   {
     id: "s2",
-    title: "FastAPI Boilerplate",
+    title: "30 minutes delay",
     categoryId: "2",
-    text: 'from fastapi import FastAPI\n\napp = FastAPI()\n\n@app.get("/")\ndef read_root():\n    return {"Hello": "World"}',
+    text: 'This request have been forwarded to related parties and we shall keep you posted. Please feel free to ask about the latest update.',
   },
 ];
 
@@ -69,7 +77,7 @@ const defaultNotes = [
   {
     id: "n1",
     title: "Scratchpad",
-    content: "Drop random ideas and temporary code here...",
+    content: "Drop temporary steps or notes here...",
     updatedAt: Date.now(),
   },
 ];
@@ -293,6 +301,15 @@ export default function App() {
 
   const [notes, setNotes] = useState([]);
   const [activeNoteId, setActiveNoteId] = useState(null);
+  const [isEditing, setIsEditing] = useState(false);
+  const [tempNote, setTempNote] = useState(null);
+  const notesRef = useRef([]);
+
+  const [shortcutEnabled, setShortcutEnabled] = useState(true);
+  const [vanishAfterCopy, setVanishAfterCopy] = useState(true);
+  const [customShortcut, setCustomShortcut] = useState(
+    "CommandOrControl+Shift+S",
+  );
 
   const [deleteAlert, setDeleteAlert] = useState({
     open: false,
@@ -333,20 +350,58 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    notesRef.current = notes;
+  }, [notes]);
+
+  useEffect(() => {
+    if (activeNote) {
+      setTempNote(activeNote);
+      setIsEditing(false);
+    } else {
+      setTempNote(null);
+      setIsEditing(false);
+    }
+  }, [activeNoteId, notes]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function updateShortcut() {
+      try {
+        await unregisterAll();
+
+        if (!shortcutEnabled || !customShortcut.trim()) return;
+
+        const appWindow = getCurrentWindow();
+        await register(customShortcut, async (e) => {
+          if (e.state === "Pressed") {
+            await appWindow.show();
+            await appWindow.setFocus();
+          }
+        });
+
+        if (!cancelled) {
+          console.log(`Shortcut registered: ${customShortcut}`);
+        }
+      } catch (err) {
+        console.error("Failed to register custom shortcut:", err);
+      }
+    }
+
+    updateShortcut();
+
+    return () => {
+      cancelled = true;
+      unregisterAll().catch((err) => console.error(err));
+    };
+  }, [customShortcut, shortcutEnabled]);
+
+  useEffect(() => {
     let unlistenClose;
     let unlistenTrayCopy;
 
     async function initApp() {
-      // SAFE CONTAINER: Added the background update checker directly into the async block wrapper
-      try {
-        const update = await check();
-        if (update && update.available) {
-          console.log(`New version found: ${update.version}. Downloading...`);
-          await update.downloadAndInstall();
-        }
-      } catch (updateError) {
-        console.error("Failed to check for system updates:", updateError);
-      }
+      await handleUpdate();
 
       try {
         if (
@@ -397,6 +452,41 @@ export default function App() {
         console.error("Error loading notes:", e);
       }
 
+      let loadedSettings = defaultSettings;
+
+      try {
+        const settingsFileExists = await exists(FILE_SETTINGS, {
+          baseDir: BaseDirectory.AppLocalData,
+        });
+        const legacySettingsFileExists = await exists(LEGACY_FILE_SETTINGS, {
+          baseDir: BaseDirectory.AppLocalData,
+        });
+        const settingsFileName = settingsFileExists
+          ? FILE_SETTINGS
+          : legacySettingsFileExists
+            ? LEGACY_FILE_SETTINGS
+            : null;
+
+        if (settingsFileName) {
+          loadedSettings = {
+            ...defaultSettings,
+            ...JSON.parse(
+              await readTextFile(settingsFileName, {
+                baseDir: BaseDirectory.AppLocalData,
+              }),
+            ),
+          };
+        }
+      } catch (e) {
+        console.error("Error loading settings:", e);
+      }
+
+      setShortcutEnabled(loadedSettings.shortcutEnabled);
+      setVanishAfterCopy(loadedSettings.vanishAfterCopy);
+      setCustomShortcut(
+        loadedSettings.customShortcut ?? defaultSettings.customShortcut,
+      );
+
       const appWindow = getCurrentWindow();
       unlistenClose = await appWindow.onCloseRequested((e) => {
         e.preventDefault();
@@ -413,18 +503,6 @@ export default function App() {
         });
       } catch (e) {
         console.error("Tray custom payload exception handler error:", e);
-      }
-
-      try {
-        await unregisterAll();
-        await register("CommandOrControl+Shift+S", async (e) => {
-          if (e.state === "Pressed") {
-            await appWindow.show();
-            await appWindow.setFocus();
-          }
-        });
-      } catch (e) {
-        console.error(e);
       }
 
       try {
@@ -480,6 +558,19 @@ export default function App() {
     }
   };
 
+  const saveSettings = async (data) => {
+    setShortcutEnabled(data.shortcutEnabled);
+    setVanishAfterCopy(data.vanishAfterCopy);
+    setCustomShortcut(data.customShortcut);
+    try {
+      await writeTextFile(FILE_SETTINGS, JSON.stringify(data, null, 2), {
+        baseDir: BaseDirectory.AppLocalData,
+      });
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
   const saveNotesToFile = async (data) => {
     try {
       await writeTextFile(FILE_NOTES, JSON.stringify(data, null, 2), {
@@ -487,6 +578,18 @@ export default function App() {
       });
     } catch (e) {
       console.error(e);
+    }
+  };
+
+  const handleUpdate = async () => {
+    try {
+      const update = await check();
+      if (update?.available) {
+        console.log(`New version found: ${update.version}. Downloading...`);
+        await update.downloadAndInstall();
+      }
+    } catch (updateError) {
+      console.error("Failed to check for system updates:", updateError);
     }
   };
 
@@ -504,12 +607,19 @@ export default function App() {
   };
 
   const updateActiveNote = (field, value) => {
-    const updatedNotes = notes.map((n) =>
-      n.id === activeNoteId
-        ? { ...n, [field]: value, updatedAt: Date.now() }
-        : n,
-    );
-    setNotes(updatedNotes);
+    setNotes((prevNotes) => {
+      const updatedNotes = prevNotes.map((n) =>
+        n.id === activeNoteId
+          ? { ...n, [field]: value, updatedAt: Date.now() }
+          : n,
+      );
+      notesRef.current = updatedNotes;
+      return updatedNotes;
+    });
+  };
+
+  const handleNoteBlur = () => {
+    saveNotesToFile(notesRef.current);
   };
 
   const confirmDeleteNote = (id) => {
@@ -527,9 +637,12 @@ export default function App() {
     try {
       await navigator.clipboard.writeText(snippet.text);
       setCopiedId(snippet.id);
+
       setTimeout(async () => {
         setCopiedId(null);
-        await getCurrentWindow().hide();
+        if (vanishAfterCopy) {
+          await getCurrentWindow().hide();
+        }
       }, 300);
     } catch (e) {
       console.error(e);
@@ -713,6 +826,26 @@ export default function App() {
   };
 
   const activeNote = notes.find((n) => n.id === activeNoteId);
+
+  const saveActiveNote = () => {
+    if (!tempNote || !activeNote) return;
+
+    const updatedNotes = notes.map((note) =>
+      note.id === activeNote.id
+        ? {
+            ...note,
+            title: tempNote.title,
+            content: tempNote.content,
+            updatedAt: Date.now(),
+          }
+        : note,
+    );
+
+    setNotes(updatedNotes);
+    notesRef.current = updatedNotes;
+    saveNotesToFile(updatedNotes);
+    setIsEditing(false);
+  };
 
   const activeSnippetItem = useMemo(() => {
     return snippets.find((s) => s.id === draggedSnippetId);
@@ -938,20 +1071,68 @@ export default function App() {
           <main className="flex-1 flex flex-col bg-background relative">
             {activeNote ? (
               <div className="flex-1 flex flex-col p-8 max-w-4xl mx-auto w-full h-full">
-                <input
-                  type="text"
-                  value={activeNote.title}
-                  onChange={(e) => updateActiveNote("title", e.target.value)}
-                  onBlur={() => saveNotesToFile(notes)}
-                  placeholder="Note Title"
-                  className="bg-transparent text-3xl font-bold text-white focus:outline-none mb-6 placeholder:text-gray-700"
-                />
+                <div className="flex justify-between items-center mb-6 gap-3">
+                  <input
+                    type="text"
+                    disabled={!isEditing}
+                    value={isEditing ? tempNote?.title ?? "" : activeNote.title}
+                    onChange={(e) =>
+                      setTempNote((prev) => ({
+                        ...(prev ?? activeNote),
+                        title: e.target.value,
+                      }))
+                    }
+                    onBlur={!isEditing ? handleNoteBlur : undefined}
+                    placeholder="Note Title"
+                    className={`bg-transparent text-3xl font-bold text-white focus:outline-none placeholder:text-gray-700 flex-1 ${!isEditing ? "cursor-default" : "border-b border-teal-500/50"}`}
+                  />
+                  <div className="flex gap-2 shrink-0">
+                    {!isEditing ? (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsEditing(true);
+                          setTempNote(activeNote);
+                        }}
+                        className="text-textMuted hover:text-teal-400 p-2 transition-colors"
+                      >
+                        <Edit2 size={20} />
+                      </button>
+                    ) : (
+                      <>
+                        <button
+                          type="button"
+                          onClick={saveActiveNote}
+                          className="text-teal-400 hover:text-teal-300 p-2 transition-colors"
+                        >
+                          <Check size={20} />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setIsEditing(false);
+                            setTempNote(activeNote);
+                          }}
+                          className="text-red-400 hover:text-red-300 p-2 transition-colors"
+                        >
+                          <Trash2 size={20} />
+                        </button>
+                      </>
+                    )}
+                  </div>
+                </div>
                 <textarea
-                  value={activeNote.content}
-                  onChange={(e) => updateActiveNote("content", e.target.value)}
-                  onBlur={() => saveNotesToFile(notes)}
+                  disabled={!isEditing}
+                  value={isEditing ? tempNote?.content ?? "" : activeNote.content}
+                  onChange={(e) =>
+                    setTempNote((prev) => ({
+                      ...(prev ?? activeNote),
+                      content: e.target.value,
+                    }))
+                  }
+                  onBlur={!isEditing ? handleNoteBlur : undefined}
                   placeholder="Start typing your notes here..."
-                  className="flex-1 bg-transparent text-gray-300 text-sm leading-relaxed focus:outline-none resize-none placeholder:text-gray-700 font-sans"
+                  className={`flex-1 bg-transparent text-gray-300 text-sm leading-relaxed focus:outline-none resize-none font-sans ${!isEditing ? "cursor-default" : ""}`}
                 />
               </div>
             ) : (
@@ -1108,6 +1289,70 @@ export default function App() {
                     Cancel Edit
                   </button>
                 )}
+              </div>
+
+              <div className="mt-6 border-t border-borderLine pt-4 space-y-3">
+                <h3 className="text-xs font-semibold text-textMuted uppercase tracking-wider">
+                  Preferences
+                </h3>
+
+                <label className="flex items-center justify-between cursor-pointer gap-4">
+                  <span className="text-sm">Enable Global Shortcut</span>
+                  <input
+                    type="checkbox"
+                    checked={shortcutEnabled}
+                    onChange={async () => {
+                      const nextValue = !shortcutEnabled;
+                      await saveSettings({
+                        shortcutEnabled: nextValue,
+                        vanishAfterCopy,
+                        customShortcut,
+                      });
+                    }}
+                    className="h-4 w-4 accent-teal-400"
+                  />
+                </label>
+
+                <label className="flex items-center justify-between cursor-pointer gap-4">
+                  <span className="text-sm">Vanish After Copy</span>
+                  <input
+                    type="checkbox"
+                    checked={vanishAfterCopy}
+                    onChange={() => {
+                      const nextValue = !vanishAfterCopy;
+                      saveSettings({
+                        shortcutEnabled,
+                        vanishAfterCopy: nextValue,
+                        customShortcut,
+                      });
+                    }}
+                    className="h-4 w-4 accent-teal-400"
+                  />
+                </label>
+
+                <div className="mt-4 p-3 border border-borderLine rounded-md bg-[#121212]">
+                  <label className="text-xs font-semibold text-textMuted uppercase block mb-2">
+                    Global Shortcut
+                  </label>
+                  <input
+                    type="text"
+                    value={customShortcut}
+                    onChange={(e) => {
+                      const nextValue = e.target.value;
+                      setCustomShortcut(nextValue);
+                      saveSettings({
+                        shortcutEnabled,
+                        vanishAfterCopy,
+                        customShortcut: nextValue,
+                      });
+                    }}
+                    className="w-full bg-background border border-borderLine rounded px-3 py-1.5 text-sm focus:outline-none focus:border-teal-500"
+                    placeholder="e.g. CommandOrControl+Shift+K"
+                  />
+                  <p className="text-[10px] text-gray-500 mt-1">
+                    Use format: CommandOrControl+Shift+Key
+                  </p>
+                </div>
               </div>
             </div>
             <div className="flex justify-end gap-3 border-t border-borderLine pt-4">

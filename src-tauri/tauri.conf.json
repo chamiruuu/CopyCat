@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "copycat",
+  "productName": "CopyCat",
   "version": "0.1.2",
-  "identifier": "com.asus.copycat",
+  "identifier": "com.chamirurf.copycat",
   "build": {
     "beforeDevCommand": "npm run dev",
     "devUrl": "http://localhost:1420",
@@ -12,7 +12,7 @@
   "app": {
     "windows": [
       {
-        "title": "copycat",
+        "title": "CopyCat",
         "width": 800,
         "height": 600
       }
@@ -23,6 +23,8 @@
   },
   "bundle": {
     "active": true,
+    "createUpdaterArtifacts": true,
+    "publisher": "chamirurf",
     "targets": "all",
     "icon": [
       "icons/icon.ico"
@@ -33,7 +35,7 @@
       "active": true,
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDczMTJGM0VBQzFFOTFDNzEKUldSeEhPbkI2dk1TY3l3L25BclBXeEJCUUNLa3huRUEzQXdQT2F3TGxRUHdmbUFEdG1BVWpqdloK",
       "endpoints": [
-        "https://raw.githubusercontent.com/chamiruuu/copycat/main/updater-json/update.json"
+        "https://github.com/chamiruuu/CopyCat/releases/latest/download/latest.json"
       ]
     }
   }

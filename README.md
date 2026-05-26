@@ -20,6 +20,7 @@ A modern, lightweight clipboard manager for organizing and quickly accessing tex
 ### Prerequisites
 - Node.js 16+
 - npm or yarn
+- Rust toolchain with `cargo` and `rustup` installed
 
 ### Installation
 
@@ -35,11 +36,30 @@ npm install
 npm run tauri dev
 ```
 
+If `cargo` is not available in your shell, install Rust from https://rustup.rs/ before running Tauri.
+
 ### Build
 
 ```bash
 npm run tauri build
 ```
+
+## Release Workflow
+
+To publish a new version for users:
+
+1. Update the `version` field in `package.json`.
+2. Commit your changes.
+3. Create a tag, for example `v1.0.1`, and push it with tags:
+
+```bash
+git add .
+git commit -m "Release v1.0.1"
+git tag v1.0.1
+git push origin main --tags
+```
+
+The GitHub Action at `.github/workflows/tauri.yml` will build the release and publish the updater assets automatically.
 
 ## Usage
 
