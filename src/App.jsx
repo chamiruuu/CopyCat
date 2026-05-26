@@ -5,7 +5,6 @@ import {
   BaseDirectory,
   exists,
 } from "@tauri-apps/plugin-fs";
-import { register, unregisterAll } from "@tauri-apps/plugin-global-shortcut";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { Menu } from "@tauri-apps/api/menu";
 import { TrayIcon } from "@tauri-apps/api/tray";
@@ -43,14 +42,6 @@ import logo from "./assets/CopyCat.png";
 const FILE_SNIPPETS = "copycat_data.json";
 const FILE_CATEGORIES = "copycat_cats.json";
 const FILE_NOTES = "copycat_notes.json";
-const FILE_SETTINGS = "settings.json";
-const LEGACY_FILE_SETTINGS = "copycat_settings.json";
-
-const defaultSettings = {
-  shortcutEnabled: true,
-  vanishAfterCopy: true,
-  customShortcut: "CommandOrControl+Shift+S",
-};
 
 const defaultCategories = [
   { id: "1", name: "General", color: "#2dd4bf" },
@@ -305,12 +296,6 @@ export default function App() {
   const [tempNote, setTempNote] = useState(null);
   const notesRef = useRef([]);
 
-  const [shortcutEnabled, setShortcutEnabled] = useState(true);
-  const [vanishAfterCopy, setVanishAfterCopy] = useState(true);
-  const [customShortcut, setCustomShortcut] = useState(
-    "CommandOrControl+Shift+S",
-  );
-
   const [deleteAlert, setDeleteAlert] = useState({
     open: false,
     type: "",
@@ -362,39 +347,6 @@ export default function App() {
       setIsEditing(false);
     }
   }, [activeNoteId, notes]);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    async function updateShortcut() {
-      try {
-        await unregisterAll();
-
-        if (!shortcutEnabled || !customShortcut.trim()) return;
-
-        const appWindow = getCurrentWindow();
-        await register(customShortcut, async (e) => {
-          if (e.state === "Pressed") {
-            await appWindow.show();
-            await appWindow.setFocus();
-          }
-        });
-
-        if (!cancelled) {
-          console.log(`Shortcut registered: ${customShortcut}`);
-        }
-      } catch (err) {
-        console.error("Failed to register custom shortcut:", err);
-      }
-    }
-
-    updateShortcut();
-
-    return () => {
-      cancelled = true;
-      unregisterAll().catch((err) => console.error(err));
-    };
-  }, [customShortcut, shortcutEnabled]);
 
   useEffect(() => {
     let unlistenClose;
@@ -452,59 +404,6 @@ export default function App() {
         console.error("Error loading notes:", e);
       }
 
-      let loadedSettings = defaultSettings;
-
-      try {
-        const settingsFileExists = await exists(FILE_SETTINGS, {
-          baseDir: BaseDirectory.AppLocalData,
-        });
-        const legacySettingsFileExists = await exists(LEGACY_FILE_SETTINGS, {
-          baseDir: BaseDirectory.AppLocalData,
-        });
-        const settingsFileName = settingsFileExists
-          ? FILE_SETTINGS
-          : legacySettingsFileExists
-            ? LEGACY_FILE_SETTINGS
-            : null;
-
-        if (settingsFileName) {
-          loadedSettings = {
-            ...defaultSettings,
-            ...JSON.parse(
-              await readTextFile(settingsFileName, {
-                baseDir: BaseDirectory.AppLocalData,
-              }),
-            ),
-          };
-        }
-      } catch (e) {
-        console.error("Error loading settings:", e);
-      }
-
-      setShortcutEnabled(loadedSettings.shortcutEnabled);
-      setVanishAfterCopy(loadedSettings.vanishAfterCopy);
-      setCustomShortcut(
-        loadedSettings.customShortcut ?? defaultSettings.customShortcut,
-      );
-
-      const appWindow = getCurrentWindow();
-      unlistenClose = await appWindow.onCloseRequested((e) => {
-        e.preventDefault();
-        appWindow.hide();
-      });
-
-      try {
-        unlistenTrayCopy = await listen("tray_copy_snippet", async (event) => {
-          const textToCopy = event.payload;
-          if (textToCopy) {
-            await navigator.clipboard.writeText(textToCopy);
-            console.log("Copied via tray context menu selection");
-          }
-        });
-      } catch (e) {
-        console.error("Tray custom payload exception handler error:", e);
-      }
-
       try {
         const menu = await Menu.new({
           items: [
@@ -532,7 +431,6 @@ export default function App() {
     return () => {
       if (unlistenClose) unlistenClose.then((fn) => fn());
       if (unlistenTrayCopy) unlistenTrayCopy.then((fn) => fn());
-      unregisterAll().catch((e) => console.error(e));
     };
   }, []);
 
@@ -551,19 +449,6 @@ export default function App() {
     setCategories(data);
     try {
       await writeTextFile(FILE_CATEGORIES, JSON.stringify(data, null, 2), {
-        baseDir: BaseDirectory.AppLocalData,
-      });
-    } catch (e) {
-      console.error(e);
-    }
-  };
-
-  const saveSettings = async (data) => {
-    setShortcutEnabled(data.shortcutEnabled);
-    setVanishAfterCopy(data.vanishAfterCopy);
-    setCustomShortcut(data.customShortcut);
-    try {
-      await writeTextFile(FILE_SETTINGS, JSON.stringify(data, null, 2), {
         baseDir: BaseDirectory.AppLocalData,
       });
     } catch (e) {
@@ -640,9 +525,6 @@ export default function App() {
 
       setTimeout(async () => {
         setCopiedId(null);
-        if (vanishAfterCopy) {
-          await getCurrentWindow().hide();
-        }
       }, 300);
     } catch (e) {
       console.error(e);
@@ -1292,67 +1174,6 @@ export default function App() {
               </div>
 
               <div className="mt-6 border-t border-borderLine pt-4 space-y-3">
-                <h3 className="text-xs font-semibold text-textMuted uppercase tracking-wider">
-                  Preferences
-                </h3>
-
-                <label className="flex items-center justify-between cursor-pointer gap-4">
-                  <span className="text-sm">Enable Global Shortcut</span>
-                  <input
-                    type="checkbox"
-                    checked={shortcutEnabled}
-                    onChange={async () => {
-                      const nextValue = !shortcutEnabled;
-                      await saveSettings({
-                        shortcutEnabled: nextValue,
-                        vanishAfterCopy,
-                        customShortcut,
-                      });
-                    }}
-                    className="h-4 w-4 accent-teal-400"
-                  />
-                </label>
-
-                <label className="flex items-center justify-between cursor-pointer gap-4">
-                  <span className="text-sm">Vanish After Copy</span>
-                  <input
-                    type="checkbox"
-                    checked={vanishAfterCopy}
-                    onChange={() => {
-                      const nextValue = !vanishAfterCopy;
-                      saveSettings({
-                        shortcutEnabled,
-                        vanishAfterCopy: nextValue,
-                        customShortcut,
-                      });
-                    }}
-                    className="h-4 w-4 accent-teal-400"
-                  />
-                </label>
-
-                <div className="mt-4 p-3 border border-borderLine rounded-md bg-[#121212]">
-                  <label className="text-xs font-semibold text-textMuted uppercase block mb-2">
-                    Global Shortcut
-                  </label>
-                  <input
-                    type="text"
-                    value={customShortcut}
-                    onChange={(e) => {
-                      const nextValue = e.target.value;
-                      setCustomShortcut(nextValue);
-                      saveSettings({
-                        shortcutEnabled,
-                        vanishAfterCopy,
-                        customShortcut: nextValue,
-                      });
-                    }}
-                    className="w-full bg-background border border-borderLine rounded px-3 py-1.5 text-sm focus:outline-none focus:border-teal-500"
-                    placeholder="e.g. CommandOrControl+Shift+K"
-                  />
-                  <p className="text-[10px] text-gray-500 mt-1">
-                    Use format: CommandOrControl+Shift+Key
-                  </p>
-                </div>
               </div>
             </div>
             <div className="flex justify-end gap-3 border-t border-borderLine pt-4">

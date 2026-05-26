@@ -1,0 +1,9 @@
+# Force all files to LF in the repo, but use CRLF on Windows checkout
+* text=auto
+
+# Force specific files to stay as LF to avoid Rust/Tauri build issues
+*.rs text eol=lf
+*.toml text eol=lf
+*.json text eol=lf
+*.js text eol=lf
+*.jsx text eol=lf

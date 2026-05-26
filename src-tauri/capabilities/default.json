@@ -15,8 +15,6 @@
     "fs:allow-applocaldata-read",
     "fs:allow-read-text-file",
     "fs:allow-write-text-file",
-    "global-shortcut:default",
-    "global-shortcut:allow-register",
     "core:tray:default",
     "core:tray:allow-new",
     "core:tray:allow-set-icon",
